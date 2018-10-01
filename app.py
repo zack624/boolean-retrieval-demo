@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from numpy import *
+
 import pickle
 import re
+from bitarray import bitarray
 
 
 # data pre-processing,return article(dictionary) and art_id list
@@ -66,22 +67,31 @@ def load_word_list(file_name):
 def create_word_vectors(dataset, word_list):
     w_count = len(word_list)
     a_count = len(dataset)
-    word_vectors = mat(zeros((w_count, a_count)))
+    # word_vectors = mat(zeros((w_count, a_count)))
+    word_vectors = []
     for i in range(w_count):
         if i % 10000 == 0:
             print len(word_list), " word vectors generating: ", i
+        vector = bitarray(a_count)
+        vector.setall(False)
         for j in range(a_count):
             if word_list[i] in dataset[j]['content']:
-                word_vectors[i, j] = 1
+                # word_vectors[i, j] = 1
+                vector[j] = True
+        word_vectors.append(vector)
     return word_vectors
 
 
 def save_word_vectors(word_vectors, file_name):
-    save(file_name, word_vectors)
+    # save(file_name, word_vectors)
+    fr = open(file_name, "w")
+    fr.write(str(word_vectors))
 
 
 def load_word_vectors(file_name):
-    return load(file_name)
+    # return load(file_name)
+    fr = open(file_name, "r")
+    return eval(fr.read())
 
 
 # match query and return document list
@@ -90,7 +100,8 @@ def find_word_vector(word, word_list, word_vectors):
         index = word_list.index(word.lower())
     except ValueError:
         raise
-    return word_vectors[index, :]
+    # return word_vectors[index, :]
+    return word_vectors[index]
 
 
 def retrieval(query, word_list, word_vectors, dataset):
@@ -100,44 +111,51 @@ def retrieval(query, word_list, word_vectors, dataset):
             query_vector = find_word_vector(queries[0], word_list, word_vectors)
         else:
             query_vector = find_word_vector(queries[1], word_list, word_vectors)
-            query_vector = (query_vector-1)*-1
+            # query_vector = (query_vector-1)*-1
+            query_vector = ~query_vector
         for i in range(1, len(queries)):
             if queries[i] == 'AND' or queries[i] == 'OR' or queries[i] == 'NOT':
                 post = find_word_vector(queries[i+1], word_list, word_vectors)
                 if queries[i] == 'AND':
-                    query_vector = multiply(query_vector, post)
+                    # query_vector = multiply(query_vector, post)
+                    query_vector = query_vector & post
                 if queries[i] == 'OR':
-                    query_vector = add(query_vector, post)
+                    # query_vector = add(query_vector, post)
+                    query_vector = query_vector | post
                 if queries[i] == 'NOT':
-                    query_vector = multiply(query_vector, (post-1)*-1)
-                i += 1
+                    # query_vector = multiply(query_vector, (post-1)*-1)
+                    query_vector = query_vector & ~post
         # FIXME to use function nonzero
         query_art = []
         for i in range(len(dataset)):
             if query_vector[i] == 1:
                 query_art.append(dataset[int(i)])
     except ValueError:
-        return None
+        return []
     return query_art
+
+
+def initial(dataset, word_list_name, vector_name):
+    split_ds = data_pre_processing(dataset)
+    wl = create_word_list(split_ds)
+    save_word_list(wl, word_list_name)
+    wv = create_word_vectors(split_ds, wl)
+    save_word_vectors(wv, vector_name)
+
+
+def search(dataset, word_list_name, vector_name):
+    word_list = load_word_list(word_list_name)
+    word_vectors = load_word_vectors(vector_name)
+    while True:
+        search_words = raw_input("please input your search words:")
+        articles = retrieval(search_words, word_list, word_vectors, dataset)
+        for a in articles:
+            print "id: ", str(a['id']), "title: ", a['title']
+        print "count: ", len(articles)
+        print "=" * 100
 
 
 if __name__ == '__main__':
     dataset = load_dataset('dataset')
-    # split_ds = data_pre_processing(dataset)
-    # wl = create_word_list(split_ds)
-    # save_word_list(wl, "word_list.txt")
-    # wv = create_word_vectors(split_ds, wl)
-    # save_word_vectors(wv, "word_vectors.npy")
-    word_list = load_word_list("5001word_list.txt")
-    word_vectors = load_word_vectors("5001word_vectors.npy")
-    while True:
-        search_words = raw_input("please input your search words:")
-        articles = retrieval(search_words, word_list, word_vectors, dataset)
-        if articles is None:
-            print "Null"
-        else:
-            for a in articles:
-                print "id: ", str(a['id']), "title: ", a['title']
-            print "count: ", len(articles)
-        print "=" * 100
-
+    # initial(dataset, "5001word_list.txt", "5001word_vectors_real_bit.txt")
+    search(dataset, "5001word_list.txt", "5001word_vectors_real_bit.txt")
